@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>h7ais</title>
+<style>
+:root{--bg:#0f1115;--panel:#181b22;--card:#1f232c;--line:#2c313c;--text:#e6e8ee;--muted:#8a93a6;--acc:#5b8cff;--ok:#3ecf8e;--warn:#f5b84b;--err:#ef6b6b}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Hiragino Sans","Yu Gothic",sans-serif;font-size:15px}
+body{display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:16px;margin:0 auto 0 0}
+select,button,textarea{font:inherit}
+select{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px}
+button{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover:not(:disabled){filter:brightness(1.2)}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.danger{border-color:var(--err);color:var(--err)}
+#status{font-size:12px;padding:4px 10px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--muted)}
+#status.ok{color:var(--ok)}
+#status.warn{color:var(--warn)}
+#status.err{color:var(--err)}
+#progress{height:4px;background:var(--line);display:none}
+#progress div{height:100%;width:0;background:var(--acc);transition:width .2s}
+#notice{display:none;padding:10px 12px;background:#2a2412;color:var(--warn);font-size:13px;line-height:1.6;border-bottom:1px solid var(--line)}
+#chat{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:min(860px,100%);margin:0 auto;width:100%;display:flex}
+.msg.user{justify-content:flex-end}
+.bubble{line-height:1.65;word-break:break-word;min-width:0}
+.msg.user .bubble{background:var(--acc);color:#fff;max-width:85%;border-radius:12px 12px 2px 12px;padding:10px 12px;white-space:pre-wrap;width:fit-content}
+.msg.ai .bubble{width:100%}
+.msg.sys .bubble{color:var(--muted);font-size:13px;text-align:center;width:100%}
+.msg.err .bubble{color:var(--err)}
+.bubble p{margin:.4em 0}
+.bubble code{background:var(--card);padding:1px 5px;border-radius:4px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em}
+.streaming{white-space:pre-wrap}
+.cursor::after{content:"▋";color:var(--acc)}
+.codebox{margin:10px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#0b0d11}
+.codehead{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--card);font-size:12px;color:var(--muted)}
+.codehead .acts{display:flex;gap:6px}
+.codehead button{padding:3px 8px;font-size:12px}
+.codebox pre{margin:0;padding:12px;overflow-x:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;white-space:pre}
+.stopnote{color:var(--warn);font-size:12px;margin-top:6px}
+#composer{border-top:1px solid var(--line);background:var(--panel);padding:10px 12px}
+#tpl{display:flex;gap:6px;flex-wrap:wrap;margin:0 auto 8px;max-width:860px}
+#tpl button{font-size:12px;padding:4px 8px}
+#inputRow{display:flex;gap:8px;max-width:860px;margin:0 auto;align-items:flex-end}
+#input{flex:1;min-height:44px;max-height:180px;resize:none;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;outline:none}
+#input:focus{border-color:var(--acc)}
+#send{min-width:76px;height:44px}
+#stop{display:none;min-width:76px;height:44px;border-color:var(--err);color:var(--err)}
+.hint{font-size:12px;color:var(--muted);max-width:860px;margin:6px auto 0}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;flex-direction:column;padding:12px;gap:8px;z-index:10}
+#modal.show{display:flex}
+#modal .bar{display:flex;justify-content:space-between;align-items:center}
+#previewFrame{flex:1;width:100%;border:1px solid var(--line);border-radius:10px;background:#fff}
+@media (max-width:600px){h1{width:100%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>h7ais</h1>
+  <select id="model" title="モデル"></select>
+  <button id="loadBtn" class="primary">モデル読込</button>
+  <button id="clearBtn" class="danger">履歴クリア</button>
+  <span id="status">未ロード</span>
+</header>
+<div id="progress"><div></div></div>
+<div id="notice"></div>
+<div id="chat"></div>
+<div id="composer">
+  <div id="tpl">
+    <button data-t="次のコードのバグを探して修正してください。">バグ修正</button>
+    <button data-t="次のコードを読みやすくリファクタリングしてください。">リファクタ</button>
+    <button data-t="次のコードの動作を日本語で説明してください。">コード説明</button>
+    <button data-t="以下の仕様を満たすコードを書いてください：">コード生成</button>
+  </div>
+  <div id="inputRow">
+    <textarea id="input" rows="1" placeholder="例：配列を重複なしにするJavaScript関数を書いて"></textarea>
+    <button id="send" class="primary" disabled>送信</button>
+    <button id="stop">停止</button>
+  </div>
+  <div class="hint">Enterで送信・Shift+Enterで改行。モデル読込後に利用できます。</div>
+</div>
+<div id="modal">
+  <div class="bar"><b>プレビュー（隔離iframe・外部通信なし）</b><button id="closePreview">閉じる</button></div>
+  <iframe id="previewFrame" sandbox="allow-scripts"></iframe>
+</div>
+
+<script type="module">
+import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+
+// モデルIDは使用するWebLLMのバージョンの prebuilt 一覧に存在するものを指定してください
+// name: 表示名 / base: 実際に読み込むモデルの元 / size: 目安のダウンロード容量
+const MODELS = [
+  { id: "Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC", name: "lagger", base: "Qwen2.5-Coder 0.5B", size: "約0.4GB・スマホ向け" },
+  { id: "Llama-3.2-1B-Instruct-q4f16_1-MLC", name: "chiller", base: "Llama 3.2 1B（コード特化ではありません）", size: "約0.7GB" },
+  { id: "Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC", name: "chiller1.0", base: "Qwen2.5-Coder 3B", size: "約2GB・VRAM 4GB以上" },
+  { id: "Phi-3.5-mini-instruct-q4f16_1-MLC", name: "fast programmer", base: "Phi-3.5 mini 3.8B（5Bモデルは未採用）", size: "約2.2GB・VRAM 4GB以上" },
+  { id: "Qwen2.5-Coder-7B-Instruct-q4f16_1-MLC", name: "hacker", base: "Qwen2.5-Coder 7B", size: "約5GB・VRAM 6GB以上" }
+];
+
+const SYSTEM = `あなたは優秀なプログラミングアシスタントです。
+- 日本語で簡潔に回答する。
+- コードは必ずMarkdownのコードブロック（三連バッククォート＋言語名）に入れる。
+- 既存コードの修正依頼では、変更点を示したうえで完全なコードを出す。
+- 仕様が曖昧な場合は仮定を明示する。
+- 確信が持てない内容は「不確か」と書き、断定しない。
+- 同じ文を繰り返さない。`;
+
+const LIMIT_CHARS = 12000;
+const $ = id => document.getElementById(id);
+const history = []; // {role, content}
+let engine = null, loading = false, busy = false;
+
+// ---------- 初期化 ----------
+MODELS.forEach(m => {
+  const o = document.createElement("option");
+  o.value = m.id;
+  o.textContent = `${m.name}（${m.base}・${m.size}）`;
+  $("model").appendChild(o);
+});
+$("model").value = /Mobi|Android|iPhone/i.test(navigator.userAgent) ? MODELS[0].id : MODELS[2].id;
+
+function setStatus(text, cls = "") {
+  const s = $("status");
+  s.textContent = text;
+  s.className = cls;
+}
+function notice(text) {
+  const n = $("notice");
+  n.textContent = text || "";
+  n.style.display = text ? "block" : "none";
+}
+function scrollBottom() {
+  $("chat").scrollTop = $("chat").scrollHeight;
+}
+function addMsg(role, text) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg " + role;
+  const b = document.createElement("div");
+  b.className = "bubble";
+  b.textContent = text;
+  wrap.appendChild(b);
+  $("chat").appendChild(wrap);
+  scrollBottom();
+  return wrap;
+}
+
+if (!("gpu" in navigator)) {
+  notice("このブラウザはWebGPUに非対応のため、AI推論を実行できません。Chrome・Edgeの最新版など、WebGPU対応ブラウザで開いてください。");
+  $("loadBtn").disabled = true;
+  setStatus("WebGPU非対応", "err");
+} else {
+  addMsg("sys", "「モデル読込」を押すとAIモデルをダウンロードします（初回のみ・数百MB〜）。読込後の推論はすべてブラウザ内で行われます。");
+}
+
+// ---------- モデル読込 ----------
+async function loadModel() {
+  if (loading || engine) return;
+  loading = true;
+  $("loadBtn").disabled = true;
+  $("model").disabled = true;
+  $("progress").style.display = "block";
+  setStatus("読込中 0%", "warn");
+  try {
+    engine = await webllm.CreateMLCEngine($("model").value, {
+      initProgressCallback: r => {
+        const p = Math.round((r.progress || 0) * 100);
+        $("progress").firstElementChild.style.width = p + "%";
+        setStatus(`読込中 ${p}%`, "warn");
+      }
+    });
+    setStatus("準備完了", "ok");
+    $("send").disabled = false;
+    notice("");
+    addMsg("sys", "モデルの読込が完了しました。");
+  } catch (e) {
+    engine = null;
+    setStatus("読込失敗", "err");
+    const big = MODELS.findIndex(m => m.id === $("model").value) >= 2;
+    notice("モデルの読込に失敗しました: " + e.message + (big
+      ? "（大きなモデルはGPUメモリ不足で失敗しやすいです。軽量モデルを選んでください）"
+      : "（ネットワーク・メモリ不足・WebGPU対応を確認してください）"));
+    $("loadBtn").disabled = false;
+    $("model").disabled = false;
+  } finally {
+    loading = false;
+    $("progress").style.display = "none";
+  }
+}
+
+// ---------- 推論 ----------
+function buildMessages() {
+  const recent = history.slice(-10);
+  return [
+    { role: "system", content: SYSTEM },
+    ...recent.map((m, i) => ({
+      role: m.role,
+      content: (m.content.length > 3000 && i < recent.length - 2)
+        ? m.content.slice(0, 3000) + "\n…(省略)"
+        : m.content
+    }))
+  ];
+}
+
+// 同じ断片が短い範囲で何度も現れたら反復とみなす
+function isRepeating(t) {
+  if (t.length < 300) return false;
+  const tail = t.slice(-60);
+  const window = t.slice(-1500);
+  let count = 0, p = -1;
+  while ((p = window.indexOf(tail, p + 1)) !== -1) count++;
+  return count >= 4;
+}
+
+let abortFlag = false;
+
+async function send(raw) {
+  const text = raw.trim();
+  if (!text || busy || !engine) return;
+  busy = true;
+  abortFlag = false;
+  $("send").disabled = true;
+  $("stop").style.display = "inline-block";
+
+  addMsg("user", text);
+  history.push({ role: "user", content: text });
+  const bubble = addMsg("ai", "").querySelector(".bubble");
+  bubble.classList.add("streaming", "cursor");
+
+  let out = "", stopReason = "";
+  try {
+    const stream = await engine.chat.completions.create({
+      messages: buildMessages(),
+      stream: true,
+      temperature: 0.2,
+      top_p: 0.9,
+      max_tokens: 2048,
+      frequency_penalty: 0.3
+    });
+    for await (const chunk of stream) {
+      out += chunk.choices[0]?.delta?.content || "";
+      if (abortFlag) { stopReason = "停止しました"; break; }
+      if (out.length > LIMIT_CHARS) { stopReason = "出力が長すぎるため停止しました"; break; }
+      if (isRepeating(out)) { stopReason = "同じ内容の反復を検出したため停止しました"; break; }
+      bubble.textContent = out;
+      scrollBottom();
+    }
+  } catch (e) {
+    stopReason = "エラー: " + e.message;
+  }
+  if (stopReason) engine.interruptGenerate();
+
+  out = out.trim() || "（応答がありませんでした）";
+  history.push({ role: "assistant", content: out });
+  renderFinal(bubble, out, stopReason);
+
+  busy = false;
+  $("send").disabled = false;
+  $("stop").style.display = "none";
+  scrollBottom();
+}
+
+// ---------- 表示（Markdown最小実装・テキストとして安全に描画） ----------
+function renderFinal(bubble, text, note) {
+  bubble.className = "bubble";
+  bubble.textContent = "";
+  if ((text.match(/```/g) || []).length % 2) text += "\n```"; // 閉じ忘れ補正
+  const parts = text.split(/```([^\n`]*)\n([\s\S]*?)```/g);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 3 === 0) {
+      appendTextBlock(bubble, parts[i]);
+    } else if (i % 3 === 1) {
+      const lang = parts[i].trim().toLowerCase();
+      const code = (parts[i + 1] || "").replace(/\n$/, "");
+      appendCode(bubble, lang, code);
+      i++;
+    }
+  }
+  if (note) {
+    const n = document.createElement("div");
+    n.className = "stopnote";
+    n.textContent = "※" + note;
+    bubble.appendChild(n);
+  }
+}
+
+function appendTextBlock(parent, s) {
+  s.split(/\n{2,}/).forEach(para => {
+    if (!para.trim()) return;
+    const p = document.createElement("p");
+    p.style.whiteSpace = "pre-wrap";
+    para.split(/(`[^`\n]+`)/g).forEach(seg => {
+      if (/^`[^`\n]+`$/.test(seg)) {
+        const c = document.createElement("code");
+        c.textContent = seg.slice(1, -1);
+        p.appendChild(c);
+      } else {
+        p.appendChild(document.createTextNode(seg));
+      }
+    });
+    parent.appendChild(p);
+  });
+}
+
+function appendCode(parent, lang, code) {
+  const box = document.createElement("div");
+  box.className = "codebox";
+  const head = document.createElement("div");
+  head.className = "codehead";
+  const name = document.createElement("span");
+  name.textContent = lang || "code";
+  const acts = document.createElement("div");
+  acts.className = "acts";
+
+  const copy = document.createElement("button");
+  copy.textContent = "コピー";
+  copy.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      copy.textContent = "コピー済";
+    } catch {
+      copy.textContent = "失敗";
+    }
+    setTimeout(() => (copy.textContent = "コピー"), 1500);
+  };
+  acts.appendChild(copy);
+
+  if (["html", "css", "javascript", "js"].includes(lang)) {
+    const pv = document.createElement("button");
+    pv.textContent = "プレビュー";
+    pv.onclick = () => openPreview(lang, code);
+    acts.appendChild(pv);
+  }
+
+  head.append(name, acts);
+  const pre = document.createElement("pre");
+  const cd = document.createElement("code");
+  cd.textContent = code;
+  pre.appendChild(cd);
+  box.append(head, pre);
+  parent.appendChild(box);
+}
+
+// ---------- プレビュー（sandbox・CSPで外部通信を遮断） ----------
+const CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:">`;
+function openPreview(lang, code) {
+  let doc;
+  if (lang === "html") {
+    doc = CSP + code;
+  } else if (lang === "css") {
+    doc = `${CSP}<style>${code}</style><div class="demo">CSSプレビュー</div>`;
+  } else {
+    doc = `${CSP}<body><div id="app"></div><script>${code.replace(/<\/script/gi, "<\\/script")}</scr` + `ipt></body>`;
+  }
+  $("previewFrame").srcdoc = doc;
+  $("modal").classList.add("show");
+}
+$("closePreview").onclick = () => {
+  $("modal").classList.remove("show");
+  $("previewFrame").srcdoc = "";
+};
+
+// ---------- イベント ----------
+const input = $("input");
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 180) + "px";
+});
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    const v = input.value;
+    input.value = "";
+    input.style.height = "auto";
+    send(v);
+  }
+});
+$("send").onclick = () => {
+  const v = input.value;
+  input.value = "";
+  input.style.height = "auto";
+  send(v);
+};
+$("stop").onclick = () => {
+  abortFlag = true;
+  engine?.interruptGenerate();
+};
+document.querySelectorAll("#tpl button").forEach(b => {
+  b.onclick = () => {
+    input.value = b.dataset.t;
+    input.focus();
+  };
+});
+$("loadBtn").onclick = loadModel;
+$("clearBtn").onclick = () => {
+  if (busy) return;
+  history.length = 0;
+  $("chat").innerHTML = "";
+  addMsg("sys", "履歴をクリアしました。");
+};
+</script>
+</body>
+</html>
